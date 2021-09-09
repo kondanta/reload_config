@@ -2,20 +2,16 @@
 /// without stop/starting the service.
 /// Parameters and internals are pretty opinionated because I was
 /// using this for a pet project.
-
 mod recursive;
 
 use anyhow::Result;
 use crossbeam_channel::unbounded;
 use notify::{
-    event::{
-        DataChange,
-        ModifyKind,
-    },
     RecommendedWatcher,
     Watcher,
 };
 use recursive::RecursiveMode;
+use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::{
     Arc,
@@ -24,8 +20,8 @@ use std::sync::{
 
 /// A single function that handles the automatic config reload.
 ///
-/// I've specifically put `C`onfig behind Arc<Mutex<>> but it would be better to use something like
-/// Compare and swap.
+/// I've specifically put `C`onfig behind Arc<Mutex<>> but it would be better to
+/// use something like Compare and swap.
 ///
 /// Assume you have a config struct that is called Config
 /// ```no_run
@@ -42,7 +38,7 @@ use std::sync::{
 ///     })
 ///   }
 /// }
-/// 
+///
 /// // Create a config
 /// let cfg = Arc::new(Mutex::new(Config::load()?));
 /// let clone = Arc::clone(&cfg);
@@ -60,7 +56,7 @@ pub fn watch_changes<C>(
     f: fn() -> Result<C>,
 ) -> Result<()>
 where
-    C: Send + 'static,
+    C: Debug + Send + 'static,
 {
     let mode = RecursiveMode::from_str(&mode)?.convert();
     std::thread::spawn(move || loop {
@@ -77,6 +73,7 @@ where
         }) {
             Ok(event) => match event {
                 Ok(e) => {
+                    tracing::trace!("Captured event: {:#?}", e);
                     // Modify: DataChange::Any gets triggered everytime you open
                     // the config file and perform empty save. It was kind of
                     // annoying so I had to use AccessKind:Close so that I can
@@ -91,13 +88,20 @@ where
                     //     AccessMode::Write,
                     // )) {...}
                     // ```
-                    if e.kind ==
-                        notify::EventKind::Modify(ModifyKind::Data(
-                            DataChange::Any,
-                        ))
+                    if e.kind.is_modify() ||
+                        e.kind.is_create() ||
+                        e.kind.is_remove()
                     {
+                        tracing::trace!("Event kind: {:?}", e.kind);
                         match f() {
-                            Ok(new_config) => *cfg.lock().unwrap() = new_config,
+                            Ok(new_config) => {
+                                tracing::trace!(
+                                    "New config: {:?} - Old config: {:?}",
+                                    &new_config,
+                                    cfg,
+                                );
+                                *cfg.lock().unwrap() = new_config
+                            }
                             Err(e) => {
                                 tracing::error!("Cannot reload config: {:?}", e)
                             }

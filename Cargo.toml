@@ -1,6 +1,6 @@
 [package]
 name = "reload_config"
-version = "0.1.0"
+version = "0.1.5"
 authors = ["Taylan Dogan <git@taylandogan.info>"]
 edition = "2018"
 description = "A small library for hot reloading configuration files without restarting the process."
